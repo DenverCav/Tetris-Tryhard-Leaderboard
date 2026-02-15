@@ -18,6 +18,13 @@ content %}
     </div>
 <h3 class="mt-4">My Scores</h3>
 
+    <div class="mt-4">
+        <a href="{{ url_for('downloadData') }}"
+           class="btn btn-outline-secondary btn-sm">
+            Download my data (CSV)
+        </a>
+    </div>
+
 {% if personalScores %}
 <table class="table table-striped table-hover mt-3">
     <thead>
@@ -36,7 +43,7 @@ content %}
             <td>
                 <form method="POST" action="{{ url_for('deletePersonalScore') }}" style="display: inline";>
                     <input type="hidden" name="scoreID" value="{{ score.id }}">
-                    <button type="submit" class="btn btn-sm btn-danger">Delete</button>
+                    <button type="submit" class="btn btn-sm btn-danger" onclick="return confirm('Are you sure you want to delete this score permanently?')">Delete</button>
                 </form>
             </td>
         </tr>
