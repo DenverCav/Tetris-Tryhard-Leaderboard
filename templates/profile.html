@@ -154,6 +154,16 @@ function switchGame(game) {
 }
 </script>
 
+    <hr class="mt-5">
+
+    <h4 class="text-danger">Account Deletion - Be Careful </h4>
+
+    <form method="POST" action="{{ url_for('deleteAccount') }}"
+          onsubmit="return confirm('This will permanently delete all of your information and personal scores. This can't be undone. Continue?');">
+        <button type="submit" class = "btn btn-danger">
+            Delete My Account
+        </button>
+    </form>
 
 </div>
 <!-- End of main container mt-4 div -->

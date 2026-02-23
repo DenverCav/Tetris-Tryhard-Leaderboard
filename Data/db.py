@@ -233,6 +233,41 @@ def submitPersonalScores(discordID, score, gameType, notes, date_achieved=None):
     conn.close()
 
 
+def markUserForDeletion(discordID):
+    conn = getConnection()
+    command = conn.cursor()
+
+    command.execute("""UPDATE users
+                    SET isDeleted = 1,
+                        deletionRequestedAt = CURRENT_TIMESTAMP
+                    WHERE discordID = ?""", (discordID))
+
+    conn.commit()
+    conn.close()
+
+def restoreUser(discordID):
+    conn = getConnection()
+    command = conn.cursor()
+
+    command.execute("""
+                    UPDATE users
+                    set isDeleted = 0,
+                        deletionRequestedAt = NULL
+                    WHERE discordID = ?
+                    """, (discordID, ))
+    conn.commit()
+    conn.close()
+
+def permanentlyDeleteUser(discordID):
+    conn = getConnection()
+    command = conn.cursor()
+
+    command.execute("DELETE FROM personalLeaderboard WHERE discordID = ?", (discordID,))
+    command.execute("DELETE FROM users WHERE discordID = ?", (discordID,))
+
+    conn.commit()
+    conn.close()
+
 def deleteExactScore(username, score, gameType):
     conn = getConnection()
     command = conn.cursor()

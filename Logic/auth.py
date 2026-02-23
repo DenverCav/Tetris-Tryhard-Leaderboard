@@ -24,4 +24,3 @@ def loginUser():
 def logoutUser():
     session.clear()
     return redirect(url_for("home"))
-

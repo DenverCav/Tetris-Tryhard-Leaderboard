@@ -4,7 +4,7 @@ from flask import Flask, render_template, redirect, url_for, session, request, f
 from flask_dance.contrib.discord import make_discord_blueprint, discord
 from dotenv import load_dotenv
 from io import StringIO
-from Data.db import createDB, getUserByID, insert_user, getDebug, submitOfficialLeaderboard, getLeaderboardFromGame, getAllGames, getPersonalLeaderboard, submitPersonalScores, getAllUsers, deleteExactScore, getUserScoreTimeline, deletePersonalScoreForUser # My database helper functions
+from Data.db import createDB, getUserByID, insert_user, getDebug, submitOfficialLeaderboard, getLeaderboardFromGame, getAllGames, getPersonalLeaderboard, submitPersonalScores, getAllUsers, deleteExactScore, getUserScoreTimeline, deletePersonalScoreForUser, permanentlyDeleteUser, markUserForDeletion # My database helper functions
 load_dotenv()
 from Logic.auth import loginUser, logoutUser
 from Logic.session import createUser
@@ -90,11 +90,14 @@ def profile():
         "avatar_url": session["avatarURL"]
     }
 
-    personalScores = getPersonalLeaderboard(session["discordID"])
+    personalLeaderboard = getPersonalLeaderboard(session["discordID"])
     scoresByGame = {}
 
-    for row in personalScores:
+
+
+    for row in personalLeaderboard:
         game = row["gameType"]
+
         if game not in scoresByGame:
             scoresByGame[game] = {
                 "dates": [],
@@ -111,7 +114,7 @@ def profile():
     return render_template(
         "profile.html",
         user=user,
-        personalScores=personalScores,
+        personalScores=personalLeaderboard,
         scoresByGame=scoresByGame
     )
 
@@ -276,6 +279,16 @@ def downloadData():
 
     return response
 
+
+@app.route("/deleteAccount", methods=["POST"])
+def deleteAccount():
+    if "discordID" not in session:
+        return redirect(url_for("login"))
+    discordID = session["discordID"]
+    permanentlyDeleteUser(discordID)
+    session.clear()
+    flash("Your personal data and account have been deleted")
+    return redirect(url_for("home"))
 
 # --- Login / Logout ---
 @app.route("/login")
