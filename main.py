@@ -1,15 +1,20 @@
-import os, csv
+import os, csv, uuid, secrets, html, time
 os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1' # For local tessting
 from flask import Flask, render_template, redirect, url_for, session, request, flash, make_response
 from flask_dance.contrib.discord import make_discord_blueprint, discord
 from dotenv import load_dotenv
 from io import StringIO
+from urllib.parse import urlparse
 from Data.db import createDB, getUserByID, insert_user, getDebug, submitOfficialLeaderboard, getLeaderboardFromGame, getAllGames, getPersonalLeaderboard, submitPersonalScores, getAllUsers, deleteExactScore, getUserScoreTimeline, deletePersonalScoreForUser, permanentlyDeleteUser, markUserForDeletion, getBestScoresByPlayer # My database helper functions
 load_dotenv()
 from Logic.auth import loginUser, logoutUser
 from Logic.session import createUser
 from Logic.isAdmin import ADMIN_IDS, checkAdmin
-from Logic.arbitraryClub import getArbitraryTiers
+from Logic.arbitraryClub import getArbitraryTiers, normaliseGame
+from Logic.profileLogic import getProfileData
+from Logic.score import processScoreDeletion, processScoreSubmission, processPersonalScoreDeletion
+from Logic.security import validateCSRF, isValidUrl
+from Logic.downloadUserData import getUserPersonalScoresAsCSV
 
 
 app = Flask(__name__)
@@ -36,19 +41,26 @@ app.register_blueprint(discord_bp, url_prefix="/login")
 #createDB()
 @app.context_processor # This injects variables automatically into templates
 def createUser():
+   if "csrfToken"  not in session:
+       session["csrfToken"] = secrets.token_hex(32)
+
    if "discordID" in session:
        return {
            "logged_in": True,
            "username": session.get("username"),
            "user_pfp": session.get("avatarURL"),
-           "is_admin": checkAdmin(session["discordID"])
+           "is_admin": checkAdmin(session["discordID"]),
+           "csrfToken": session["csrfToken"]
        }
    return {
        "logged_in": False,
        "username": None,
        "user_pfp": None,
-       "is_admin": False
+       "is_admin": False,
+       "csrfToken": session["csrfToken"]
    }
+
+
 
 # --- Routes ---
 @app.route("/")
@@ -59,7 +71,11 @@ def home():
 @app.route("/leaderboard")
 def leaderboard():
    selectedGame = request.args.get("game")
-   leaderboardData = getLeaderboardFromGame(selectedGame)
+
+   if selectedGame == "combined":
+       leaderboardData = getLeaderboardFromGame("combined")
+   else:
+        leaderboardData = getLeaderboardFromGame(selectedGame)
    games = getAllGames()
 
    if not selectedGame or selectedGame == "all":
@@ -90,31 +106,12 @@ def profile():
         "avatar_url": session["avatarURL"]
     }
 
-    personalLeaderboard = getPersonalLeaderboard(session["discordID"])
-    scoresByGame = {}
-
-
-
-    for row in personalLeaderboard:
-        game = row["gameType"]
-
-        if game not in scoresByGame:
-            scoresByGame[game] = {
-                "dates": [],
-                "scores": []
-            }
-
-
-        scoresByGame[game]["dates"].append(
-            row["timeSubmitted"][:10]  # YYYY-MM-DD
-        )
-
-        scoresByGame[game]["scores"].append(row["score"])
+    personalScores, scoresByGame = getProfileData(session["discordID"])
 
     return render_template(
         "profile.html",
         user=user,
-        personalScores=personalLeaderboard,
+        personalScores=personalScores,
         scoresByGame=scoresByGame
     )
 
@@ -127,66 +124,35 @@ def submitScore():
     isAdmin = checkAdmin(session["discordID"])
 
     if request.method == "POST":
+        if not validateCSRF():
+            return "CSRF validation failed", 403
         game = request.form.get("game")
         score = request.form.get("score", type=int)
         destination = request.form.get("destination", "personal")
-        notes = request.form.get("notes") or ""
-
-        date_achieved = request.form.get("date_achieved")
-        if not date_achieved:
-            date_achieved = None
-
-        player_name = request.form.get("player_name") if isAdmin else session["username"]
+        notes = html.escape(request.form.get("notes") or "")
+        date_achieved = request.form.get("date_achieved") or None
+        player_name = (
+            html.escape(request.form.get("player_name"))
+            if isAdmin else session["username"]
+        )
         link = request.form.get("link") if isAdmin else ""
 
-        # minimumScores is used to ensure that any score that does not meet the community
-        # minimum cannot be uploaded to the leaderboard, making sure that any typos
-        # don't cause problems
-        minimumScores = {
-            "Tetris.com": 1500000,
-            "MindBender": 500000,
-            "E60": 100000,
-            "NBlox": 1000000
-        }
-
-        if not game or score is None:
-            flash("Please fill in all required fields", "warning")
-            return redirect(url_for("submitScore"))
-
-        if isAdmin and destination == "official":
-
-            if game in minimumScores and score < minimumScores[game]:
-                flash(f"The score does not meet the minimum for {game}", "warning")
-                return redirect(url_for("submitScore"))
-
-            if not player_name or not link:
-                flash("Admin submissions require a player name and a proof link", "warning")
-                return redirect(url_for("submitScore"))
-
-            submitOfficialLeaderboard(
-                username=player_name,
-                score=score,
-                link=link,
-                gameType=game,
-                submittedBy=session["username"],
-                notes=notes
-            )
-
-            flash("Score submitted to official leaderboard!", "success")
-            return redirect(url_for("leaderboard"))
-
-        # Personal scores (admins + normal users)
-
-        submitPersonalScores(
-            discordID=session["discordID"],
-            score=score,
-            gameType=game,
-            notes=notes,
-            date_achieved=date_achieved
+        status, message, redirectPage = processScoreSubmission(
+            session["discordID"],
+            session["username"],
+            isAdmin,
+            game,
+            score,
+            destination,
+            notes,
+            date_achieved,
+            player_name,
+            link
         )
 
-        flash("Score added to your personal profile!", "success")
-        return redirect(url_for("profile"))
+        flash(message, status)
+
+        return redirect(url_for(redirectPage))
 
     return render_template("submit_score.html")
 
@@ -199,31 +165,40 @@ def deleteScore():
     deleted = None
 
     if request.method == "POST":
-
+        if not validateCSRF():
+            return "CSRF validation failed", 403
         username = request.form.get("username", "").strip()
         game = request.form.get("game", "").strip()
         scoreA = request.form.get("score", "").strip()
-
         if not username or not game or not scoreA:
             flash("Fill in all the fields", "warning")
         else:
             try:
                 score = int(scoreA)
             except ValueError:
-                flash("Score must be a number, and without commas", "warning")
+                flash("Score must be a number", "warning")
             else:
-                deleted = deleteExactScore(username=username, gameType=game, score=score)
-
+                deleted = processScoreDeletion(username, game, score)
                 if deleted:
                     flash(f"Deleted {score} points for {username} in {game}", "success")
                 else:
-                    flash("That score couldn't be found. Nothing deleted", "success")
+                    flash("That score couldn't be found.", "warning")
 
     return render_template("delete_score.html")
 
-@app.route("/about")
-def about():
-   return render_template("about.html")
+
+@app.route("/demo")
+def demo():
+    demoID = f"demo{uuid.uuid4().hex[:8]}"
+
+    session["discordID"] = demoID
+    session["username"] = f"DemoUser{demoID[-4:]}"
+    session["avatarURL"] = "/static/images/Null.png"
+    session["isDemo"] = True
+
+    session["demoCreatedAt"] = time.time()
+
+    return redirect(url_for("home"))
 
 
 @app.route("/arbitraryClub")
@@ -257,58 +232,39 @@ def arbitraryClub():
     )
 
 
-
 @app.route("/deletePersonalScore", methods=["POST"])
 def deletePersonalScore():
     if "discordID" not in session:
         return redirect(url_for("login"))
-
+    if not validateCSRF():
+        return "CSRF validation failed", 403
     scoreID = request.form.get("scoreID")
-    if not scoreID:
-        flash("Invalid Request", "warning")
-        return redirect(url_for("profile"))
-
     try:
         scoreID = int(scoreID)
-    except ValueError:
+    except:
         flash("Invalid Score ID", "warning")
         return redirect(url_for("profile"))
 
-    deleted = deletePersonalScoreForUser(session["discordID"], scoreID)
-
+    deleted = processPersonalScoreDeletion(session["discordID"], scoreID)
     if deleted:
         flash("Score is deleted.", "success")
     else:
-        flash("Score couldn't be found or was already deleted", "warning")
-
+        flash("Score couldn't be found.", "warning")
     return redirect(url_for("profile"))
+
 
 @app.route("/downloadData")
 def downloadData():
     if "discordID" not in session:
         return redirect(url_for("login"))
-    # Gets all the information from the logged in user to ensure that only their data is being downloaded
-    discord_id = session["discordID"]
-    user = getUserByID(discord_id)
-    scores = getPersonalLeaderboard(discord_id)
 
-    output = StringIO()
-    writer = csv.writer(output)
+    csvData = getUserPersonalScoresAsCSV(session["discordID"])
 
-    writer.writerow(["username", "game", "score", "date"])
+    response = make_response(csvData)
 
-    for score in scores:
-        writer.writerow([
-            score["gameType"],
-            score["score"],
-            score["timeSubmitted"]
-        ])
-
-    response = make_response(output.getvalue())
     response.headers["Content-Type"] = "text/csv"
-    response.headers["Content-Disposition"] = (
-        "attachment; filename=Personal Scores.csv"
-    )
+
+    response.headers["Content-Disposition"] = "attachment; filename=Personal Scores.csv"
 
     return response
 
@@ -317,6 +273,8 @@ def downloadData():
 def deleteAccount():
     if "discordID" not in session:
         return redirect(url_for("login"))
+    if not validateCSRF():
+        return "CSRF validation failed", 403
     discordID = session["discordID"]
     permanentlyDeleteUser(discordID)
     session.clear()
@@ -334,9 +292,41 @@ def logout():
 
 
 @app.route("/login/complete")
-def loginComplete():
-    return loginUser()
+def loginComplete(): # This part originally just returned the loginUser() function, but one of my users said that there was a infinite redirect loop when clicking cancel on Discord OAuth, which this new code now fixes
+    success = loginUser()
 
+    if not success:
+        session["loginFailed"] = True
+        flash("Login cancelled.", "warning")
+        return redirect(url_for("home"))
+
+    session.pop("loginFailed", None)
+    return redirect(url_for("home"))
+
+
+@app.before_request
+def checkDemoExpiry():
+    if session.get("isDemo"):
+        created = session.get("demoCreatedAt")
+
+        if created:
+            if time.time() - created > 600: # 10 minutes
+                session.clear()
+                flash("Demo session expired, please start again.", "warning")
+                return redirect(url_for("home"))
+
+@app.after_request
+def add_security_headers(response):
+    response.headers['Content-Security-Policy'] = (
+        "default-src 'self';"
+        "img-src 'self' https://cdn.discordapp.com;"
+        "script-src 'self' https://cdn.jsdelivr.net 'unsafe-inline';"
+        "style-src 'self' https://cdn.jsdelivr.net 'unsafe-inline';"
+    )
+
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['X-Frame-Options'] = 'DENY'
+    return response
 
 
 @app.route("/debug-session") # I had to add this because for TWO DAYS the login stuff would not work after I added the database and I didn't know why. Eventually I wanted to just figure out if I was remaining logged in, because my UI said I wasn't, and this showed me I was logged in because all my info was there... I don't understand why OAuth has to be so hard

@@ -1,30 +1,37 @@
 {% extends "base.html" %}
-
 {% block content %}
+
 
 <!-- Info flash container -->
 <div id="info-flash-container" class="container mt-3"></div>
 
-
 <h2 class="mb-4">Leaderboard</h2>
-
-
 
 <!-- Game Toggle Buttons -->
 <div class="btn-group mb-3" role="group">
-    <a href="{{ url_for('leaderboard') }}"
-       class="btn btn-outline-primary {% if not selected_game %}active{% endif %}">
+    <a
+        href="{{ url_for('leaderboard') }}"
+        class="btn btn-outline-primary {% if not selected_game %}active{% endif %}"
+    >
         All Scores
+    </a>
+    <a
+        href="{{ url_for('leaderboard', game='combined') }}"
+        class="btn btn-outline-primary {% if selected_game == 'combined' %}active{% endif %}"
+    >
+        Tetris.com (All Modes)
     </a>
 
     {% for game in games %}
-        <a href="{{ url_for('leaderboard', game=game) }}"
-           class="btn btn-outline-primary {% if selected_game == game %}active{% endif %}">
-            {{ game }}
-        </a>
+    <a
+        href="{{ url_for('leaderboard', game=game) }}"
+        class="btn btn-outline-primary {% if selected_game == game %}active{% endif %}"
+    >
+        {{ game }}
+    </a>
+
     {% endfor %}
 </div>
-
 <!-- Leaderboard Table -->
 <table class="table table-striped align-middle">
     <thead>
@@ -33,10 +40,10 @@
             <th style="width: 20%">Player</th>
             <th>Score</th>
 
-            {% if not selected_game %}
-                <th style="width: 20%">Game</th>
-            {% endif %}
+            {% if not selected_game or selected_game == "combined" %}
+            <th style="width: 20%">Game</th>
 
+            {% endif %}
             <th class="text-center">Submitted By</th>
             <th class="text-center">Notes</th>
         </tr>
@@ -48,95 +55,110 @@
             <td>{{ entry.username }}</td>
             <td>
                 {% if entry.link %}
-                    <a href="{{ entry.link }}" target="_blank" class="score-link">
-                        {{ "{:,}".format(entry.score) }}
-                    </a>
-                {% else %}
+                <a href="{{ entry.link }}" target="_blank" class="score-link">
                     {{ "{:,}".format(entry.score) }}
-                {% endif %}
+                </a>
+
+                {% else %} {{ "{:,}".format(entry.score) }} {% endif %}
             </td>
 
-            {% if not selected_game %}
-                <td>{{ entry.gameType }}</td>
-            {% endif %}
+            {% if not selected_game or selected_game == "combined" %}
+            <td>{{ entry.gameType }}</td>
 
+            {% endif %}
             <td class="text-center">
+                <!-- This line: data-info="Submitted by {{ entry.submittedBy | e }}" stores the dynamic text safely using Jinja2's escape filter. Preventing XSS attacks and allows JS to read it later. -->
                 <span
                     class="info-emoji"
                     data-info="Submitted by {{ entry.submittedBy | e }}"
                     role="button"
                     tabindex="0"
-                >❓</span>
+                    >❓</span
+                >
             </td>
-
             <td class="text-center">
                 {% if entry.notes %}
-                    <span
-                        class="info-emoji text-muted"
-                        data-info="{{ entry.notes | e }}"
-                        role="button"
-                        tabindex="0"
-                    >ℹ️</span>
-                {% else %}
-                    —
-                {% endif %}
+                <span
+                    class="info-emoji text-muted"
+                    data-info="{{ entry.notes | e }}"
+                    role="button"
+                    tabindex="0"
+                    >ℹ️</span
+                >
+
+                {% else %} — {% endif %}
             </td>
         </tr>
+
         {% endfor %}
     </tbody>
 </table>
 
-<!-- Page-specific styles -->
+
 <style>
-.score-link {
-    font-weight: 600;
-    color: inherit;
-    text-decoration: none;
-}
+    .score-link {
+        font-weight: 600;
+        color: inherit;
+        text-decoration: none;
+    }
 
-.score-link:hover {
-    text-decoration: underline;
-    opacity: 0.8;
-}
+    .score-link:hover {
+        text-decoration: underline;
+        opacity: 0.8;
+    }
 
-.info-emoji {
-    cursor: pointer;
-}
+    .info-emoji {
+        cursor: pointer;
+    }
 </style>
 <script>
-document.addEventListener("DOMContentLoaded", function () {
-    const flashContainer = document.getElementById("info-flash-container");
+    document.addEventListener("DOMContentLoaded", function () {
+        const flashContainer = document.getElementById("info-flash-container");
 
-    document.addEventListener("click", function (event) {
-        const emoji = event.target.closest(".info-emoji");
-        if (!emoji) return;
 
-        const info = emoji.dataset.info;
-        if (!info) return;
+        // Instead of having a listener to every emoji, the page listens to the document and checks for clicks dynamically
+        document.addEventListener("click", function (event) {
+        // Finds the closest clicked element with the class
+            const emoji = event.target.closest(".info-emoji");
+            // Ignores the click if it wasn't on an emoji
+            if (!emoji) return;
 
-        flashContainer.innerHTML = "";
+            const info = emoji.dataset.info;
+            if (!info) return;
 
-        const alertDiv = document.createElement("div");
-        alertDiv.className = "alert alert-info alert-dismissible fade show";
-        alertDiv.setAttribute("role", "alert");
-        alertDiv.innerHTML = `
-            ${info}
-            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-        `;
+            flashContainer.innerHTML = "";
 
-        flashContainer.appendChild(alertDiv);
+            const alertDiv = document.createElement("div"); // Creates an alert in JS instead of making it in HTMl beforehand
+            alertDiv.className = "alert alert-info alert-dismissible fade"; // Uses Bootstrap to have a little fade animation
+            alertDiv.setAttribute("role", "alert");
+            alertDiv.innerHTML = `
+                ${info}
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            `;
 
-        flashContainer.scrollIntoView({
-            behavior: "smooth",
-            block: "start"
+            flashContainer.appendChild(alertDiv);
+
+            // Makes the browser render first, then shows so that the fade in will work properly.
+            requestAnimationFrame(() => {
+            alertDiv.classList.add("show");
+            });
+
+            flashContainer.scrollIntoView({
+                behavior: "smooth",
+                block: "start"
+            });
+
+            // Starts fadeout after four seconds, animation is waited to be completed before it is removed from the DOM
+            setTimeout(() => {
+                alertDiv.classList.remove("show");
+                alertDiv.classList.add("fade");
+
+                setTimeout(() => {
+                alertDiv.remove();
+               }, 250);
+            }, 4000);
         });
-
-        setTimeout(() => {
-            alertDiv.classList.remove("show");
-        }, 4000);
     });
-});
 </script>
-
 
 {% endblock %}
