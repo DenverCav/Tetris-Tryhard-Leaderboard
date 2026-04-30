@@ -54,5 +54,4 @@ FLASK_SECRET_KEY=your_flask_secret_key
 DISCORD_CLIENT_ID=your_discord_client_id
 DISCORD_CLIENT_SECRET=your_discord_client_secret
 
-Created in 1984, the Tetris® brand is one of the leading and most distinctive video game brands and franchises in the world. 
  
