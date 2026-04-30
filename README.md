@@ -1,52 +1,58 @@
-# Honours-Project
+A full-stack web application for tracking, submitting, and comparing competitive Tetris scores within the Tetris.com community.
 
-This project was developed for my university Honours Project, this implements a web based leaderboard and analytics platform for the Tetris.com competitive community.
+Built with Flask and a SQLite database, featuring Discord OAuth authentication, personal score tracking, and a global leaderboard system.
 
-Built using Python and the Flask web framework, the system allows users to track, analyse and visualise their performances across the different official web based Tetris games. The platform supports a public leaderboard, with official scores within the community, and a way to track personal scores, allowing users to view their improvement over time.
+⸻
+Features
 
-Verified moderators can submit official scores to the leaderboard, while players can view them on the official leaderboard. 
+Discord OAuth2 login system
 
-The system uses Discord OAuth for authentication, allowing users to log in securely without needing to create a new account for the site.
+Guest/demo mode for quick access
 
-# Features
+Global leaderboard with game filtering
 
-Discord OAuth authentication for secure user login
-Official leaderboard submission by verified moderators
-Personal score tracking for individual players
-Player profile pages displaying their historical performance
-Dynamic graphs on player profiles, showing progression over time
-Role based access control for moderator actions
-Data deletion functionality, allowing users to delete their accounts with all data
-Data export functionality, allowing users to download all data the site holds about them
+Personal profile pages with score history
 
-# Technology used
+Score submission (personal + official entries)
 
-Backend:
-Python
-Flask
+Moderator tools for score validation and deletion
 
-Database:
+CSRF protection and session security
+
+Basic analytics and progression tracking
+
+⸻
+Tech Stack
+
+Python (Flask)
+
 SQLite
 
-Authentication:
-Discord OAuth with Flask-Dance
+Flask-Dance (OAuth)
 
-Frontend:
-HTML
-CSS
-JavaScript
+HTML / CSS / Jinja2 templates
 
-# System Architecture
+Pytest (testing framework)
 
-The application uses a three-tiered architecture to seperate presentation logic, business rules and database access.
+⸻
+Installation
+1. Clone the repository
+git clone https://github.com/your-username/repo-name.git
 
-Presentation Layer:
-Handles all HTTP routes, template rendering and user requests.
+cd repo-name
 
-Business Logic Layer:
-Handles application rules such as score validations, tier classification, user permissions and leaderboard generation.
+2. Install dependencies 
+pip install flask flask-dance python-dotenv pytest coverage
+Environment Variables (.env setup)
+This project uses a .env file to securely store sensitive configuration values.
 
-Data Layer:
-Manages database queries and allows for access and interactions with the SQLite database.
+Create a file called .env inside the project root.
 
-![CI](https://github.com/DenverCav/Honours-Project/actions/workflows/Verify.yml/badge.svg)
+The required variables inside of the .env file are:
+
+FLASK_SECRET_KEY=your_flask_secret_key
+DISCORD_CLIENT_ID=your_discord_client_id
+DISCORD_CLIENT_SECRET=your_discord_client_secret
+
+Created in 1984, the Tetris® brand is one of the leading and most distinctive video game brands and franchises in the world. 
+ 
